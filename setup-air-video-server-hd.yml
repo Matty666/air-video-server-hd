@@ -1,0 +1,104 @@
+---
+- hosts: "all"
+  become: true
+  vars:
+    package_version: "2.2.3"
+    package_filename: "AirVideoServerHD-{{ package_version }}.tar.bz2"
+    package_url: "https://s3.amazonaws.com/AirVideoHD/Download/{{ package_filename }}"
+    package_folder_path: "/opt/air-video-server-hd/"
+    package_var_folder_path: "/var/opt/air-video-server-hd/"
+    package_path: "{{ package_folder_path }}{{ package_filename }}"
+    package_start_path: "{{ package_folder_path }}start.sh"
+    shared_folders:
+      - name: "Stuff"
+        path: "/srv/pool/stuff"
+      - name: "Videos"
+        path: "/srv/pool/videos"
+
+  vars_prompt:
+    - name: "server_password"
+      prompt: "What is the single user server password?"
+
+  tasks:
+    - name: "Install VLC"
+      apt:
+        name: "vlc"
+        state: present
+        update_cache: true
+
+    - name: "Make user"
+      user:
+        name: "airvideo"
+        group: "users"
+        system: true
+        state: present
+
+    - name: "Check for package"
+      stat:
+        path: "{{ package_path }}"
+      register: package_exists
+
+    - name: "Make package folder"
+      file:
+        path: "{{ package_folder_path }}"
+        state: directory
+        owner: airvideo
+        group: users
+
+    - name: "Make package var folder"
+      file:
+        path: "{{ package_var_folder_path }}"
+        state: directory
+        owner: airvideo
+        group: users
+
+    - name: "Make logs folder"
+      file:
+        path: "{{ package_var_folder_path }}Logs"
+        state: directory
+        owner: airvideo
+        group: users
+
+    - block:
+      - name: "Download package"
+        get_url:
+          url: "{{ package_url }}"
+          dest: "{{ package_path }}"
+
+      - unarchive:
+          src: "{{ package_path }}"
+          remote_src: true
+          dest: "{{ package_folder_path }}"
+          owner: "airvideo"
+          group: "users"
+
+      when: not package_exists.stat.exists
+
+    - name: "Configure properties"
+      template:
+        src: "Server.properties.j2"
+        dest: "{{ package_folder_path }}Server.properties"
+        owner: "airvideo"
+        group: "users"
+
+    - name: "Configure service file"
+      template:
+        src: "air-video-server-hd.service.j2"
+        dest: "{{ package_folder_path }}air-video-server-hd.service"
+
+    - name: "Link logs to /var/log/"
+      file:
+        src: "{{ package_var_folder_path }}Logs"
+        dest: "/var/log/air-video-server-hd"
+        state: link
+
+    # "systemctl enable" will make the symlinks needed to the file in /etc/systemd/system
+    # if the service enabled isnt is the standard folder
+    - name: "Enable service"
+      shell: "systemctl enable {{ package_folder_path }}air-video-server-hd.service"
+
+    - name: "Start service"
+      systemd:
+        daemon_reload: true
+        name: "air-video-server-hd"
+        state: started

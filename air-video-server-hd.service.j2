@@ -1,0 +1,12 @@
+[Unit]
+Description=Air Video Server HD
+
+[Service]
+ExecStart={{ package_start_path }}
+User=airvideo
+Group=users
+Restart=on-failure
+WorkingDirectory={{ package_folder_path }}
+
+[Install]
+WantedBy=multi-user.target
